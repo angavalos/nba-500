@@ -1,0 +1,130 @@
+---
+title: "NBA MVP Seasons"
+author: "Angel Avalos"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    keep_md: yes
+---
+# NBA 0.500
+
+### Import packages and data.
+
+##### R
+```{r setup, warning=FALSE}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+library(dplyr)
+library(ggplot2)
+library(data.table)
+library(stringr)
+#library(ggbeeswarm)
+#install.packages("devtools")
+#devtools::install_github("abresler/nbastatR")
+library(nbastatR)
+```
+
+```{r}
+df_franchise_history=nba_franchise_history()
+
+Sys.setenv("VROOM_CONNECTION_SIZE" = 8000000)
+dataGameLogsTeam=game_logs(seasons = seq(1947,2026,1),
+  league = "NBA",
+  result_types = "team",
+  season_types = "Regular Season")
+
+write.csv(dataGameLogsTeam,"20260404_nbagamelogs.csv",row.names=FALSE)
+
+assign_nba_teams()
+
+teamnames=df_dict_nba_teams%>%
+  select(nameTeam,idTeam)
+
+# Calculate from today backwards.
+test2=dataGameLogsTeam%>%
+  arrange(idTeam,desc(yearSeason),desc(numberGameTeamSeason))%>%
+  group_by(idTeam)%>%
+  mutate(cumWins=cumsum(isWin),
+         cumLosses=cumsum(isWin==FALSE),
+         cumGames=row_number())%>%
+  rowwise()%>%
+  mutate(statrec=cumWins/sum(cumWins,cumLosses),
+         dif500=statrec-0.5,
+         absdif500=abs(statrec-0.5))%>%
+  ungroup()
+
+test3=merge(test2,df_dict_nba_teams,by="idTeam")
+
+# Calculate from past onwards.
+#test3=dataGameLogsTeam%>%arrange(idTeam,numberGameTeamSeason)%>%
+#  group_by(idTeam)%>%
+#  mutate(cumWins=cumsum(isWin),
+#                     cumLosses=cumsum(isWin==FALSE))%>%
+#  rowwise()%>%
+#  mutate(statrec=cumWins/sum(cumWins,cumLosses))
+
+ggplot(test3%>%filter(yearPlayedLast==2025),
+       aes(x=cumGames,y=statrec))+
+  geom_line()+
+  geom_point(data=test3%>%
+               filter(yearPlayedLast==2025)%>%
+               filter(statrec==0.5),
+             color="red")+
+  facet_wrap(~nameTeam.y,ncol=5)
+
+ggplot(test3%>%filter(yearPlayedLast==2025),
+      aes(y=nameTeam.y,x=dif500))+
+  geom_boxplot(outliers = FALSE)+
+  geom_vline(xintercept=0,linetype="dashed")
+
+test4=test3%>%
+  filter(yearPlayedLast==2025)%>%
+  group_by(idTeam,nameTeam.y)%>%
+  summarize(fhun=sum(statrec==0.5),
+            fhun_norm=fhun/max(cumGames))
+
+test5=test3%>%
+  filter(nameTeam.y=="Atlanta Hawks"&
+           statrec==0.5)
+
+yo=test3 %>%
+  filter(yearPlayedLast==2025)%>%
+  group_by(idTeam,nameTeam.y) %>%
+  summarise(mean = mean(statrec),
+    p_value = t.test(statrec, mu = 0.5)$p.value,
+    t_stat = t.test(statrec, mu = 0.5)$statistic)
+  
+ggplot()
+```
+### Import data
+```{r mvp}
+topdf=data.frame()
+for (i in list.files("data/")){
+  # First name
+  fn=str_split_i(i,"_",1)
+  # Surname
+  sn=str_split_i(i,"_",2)
+  filename=paste("data/",i,sep="")
+  data=read.csv(filename)
+  # Remove last row with totals.
+  last=nrow(data)-1
+  # Get year of MVP.
+  year=str_split_i(data[last-1,"Date"],"-",1)
+  data=data[1:last,]
+  # Remove column with @
+  data=data%>%select(-c("X"))
+  # Keep games played.
+  data=data%>%filter(is.na(Gcar)==FALSE)
+  # Calculate FT/PTS proportion.
+  data$FT=as.numeric(data$FT)
+  data$PTS=as.numeric(data$PTS)
+  data=data%>%mutate(ftprop=FT/PTS,
+                     first_name=fn,
+                     surname=sn,
+                     mvp_year=year)
+  topdf=rbind(topdf,data)
+}
+
+ggplot(topdf,aes(x=mvp_year,y=ftprop))+
+  geom_boxplot(outliers=FALSE)+
+  geom_beeswarm()
+```
