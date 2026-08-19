@@ -47,8 +47,19 @@ assign_nba_teams()
 teamnames=df_dict_nba_teams%>%
   select(nameTeam,idTeam)
 
+tiebrk=c(24700194,24700193,24900563,
+         24900564,25500289,25500290,
+         25600289,25600290)
+
+# Remove games that never occured and tiebreaker games.
+data2=data%>%
+  filter(is.na(outcomeGame)==FALSE)%>%
+  filter(!idGame%in%tiebrk)
+
 # Calculate from today backwards.
-totmid=data%>%
+totmid=data2%>%
+  #group_by(yearSeason)%>%
+  #filter()
   # For each team, place games in order.
   arrange(idTeam,desc(yearSeason),desc(numberGameTeamSeason))%>%
   group_by(idTeam)%>%
@@ -79,7 +90,6 @@ totmid2=merge(totmid,df_dict_nba_teams,by="idTeam")
 
 # Current teams only.
 curr=totmid2%>%filter(yearPlayedLast==2025)
-
 
 team=curr%>%filter(idTeam==1610612737)
 ggplot(team,
@@ -121,18 +131,18 @@ ggplot(curr,
             color="black",
             size=3)+
   geom_text(data=curr%>%
-  group_by(idTeam,nameTeam.y)%>%
-  summarize(fhun=sum(statrec==0.5),
-            fhun_norm=fhun/max(cumGames),
-            place=median(cumGames)),
-  aes(label=paste("n=",fhun,"; ",round(fhun_norm*100,2),"%",sep=""),y=0.8,x=place))+
+              group_by(idTeam,nameTeam.y)%>%
+              summarize(fhun=sum(statrec==0.5),
+                        fhun_norm=fhun/max(cumGames),
+                        place=median(cumGames)),
+            aes(label=paste("n=",fhun,"; ",round(fhun_norm*100,2),"%",sep=""),y=0.8,x=place))+
   facet_wrap(~nameTeam.y,ncol=5,scales="free_x")+
   theme_bw()+
   xlab("# of Games")+
   ylab("Win-Loss %")
 
 test5=curr%>%
-  filter(nameTeam.y=="Atlanta Hawks"&
+  filter(idTeam==1610612737&
            statrec==0.5)%>%
   group_by(yearSeason)%>%count()
 
@@ -160,8 +170,17 @@ assign_nba_teams()
 teamnames=df_dict_nba_teams%>%
   select(nameTeam,idTeam)
 
+tiebrk=c(24700194,24700193,24900563,
+         24900564,25500289,25500290,
+         25600289,25600290)
+
+# Remove games that never occured and tiebreaker games.
+data2=data%>%
+  filter(is.na(outcomeGame)==FALSE)%>%
+  filter(!idGame%in%tiebrk)
+
 # Calculate from past onwards.
-totmid=data%>%
+totmid=data2%>%
   # For each team, place games in order.
   arrange(idTeam,yearSeason,numberGameTeamSeason)%>%
   group_by(idTeam)%>%
@@ -209,7 +228,7 @@ ggplot(curr,
 
 # To verify that teams never crossed 0.5 line.
 yo=curr%>%group_by(nameTeam.y)%>%
-  filter(statrec<=0.5)%>%count()
+  filter(statrec>=0.5)%>%count()
 
 # Recent seasons only.
 ggplot(curr%>%filter(yearSeason>2024),
@@ -277,18 +296,14 @@ ggplot(pacers%>%filter(yearSeason==2025),
 
 fin=curr%>%filter(yearSeason==2026&numberGameTeamSeason==82)
 
-fin=fin%>%mutate(wl_status=if_else(statrec>0.5,"Winning","Losing"),
-                 games_needed=if_else(wl_status=="Winning",((2*cumWins)-cumGames),(cumGames-(2*cumWins))))
+fin=fin%>%mutate(wl_status=if_else(statrec>0.5,"Need to Lose","Need to Win"),
+                 games_needed=if_else(wl_status=="Need to Lose",((2*cumWins)-cumGames),(cumGames-(2*cumWins))))
 
 ggplot(fin,aes(y=reorder(nameTeam.y,games_needed),x=games_needed,fill=wl_status))+
-  geom_bar(stat="identity")+
+  geom_bar(stat="identity",color="black")+
   geom_text(aes(label=as.character(games_needed),x=games_needed+50))+
-  #facet_wrap(~wl_status,scales="free_y")+
+  scale_fill_manual(values=c("red4","blue"),name="Status")+
   xlab("Games Away from 0.500")+
   ylab("Team")+
   theme_bw()
-
-raps=curr%>%filter(idTeam==1610612761)
-
-test=pacers%>%slice_max(numberGameTeamSeason,by=yearSeason)
 ```
