@@ -23,6 +23,7 @@ library(stringr)
 library(nbastatR)
 library(ggstar)
 library(ggimage)
+library(patchwork)
 ```
 
 ```{r}
@@ -254,13 +255,24 @@ ggplot(curr%>%filter(yearSeason>2024),
   xlab("# of Games")+
   ylab("Win-Loss %")
 
-# Count of mid-ness by season.
-test5=curr%>%
+# Count of mid-ness by season for current teams.
+test5=totmid2%>%
   filter(statrec==0.5)%>%
   group_by(nameTeam.y,yearSeason)%>%count()
 
-pacers=curr%>%filter(idTeam==1610612754)
+# Has a current team ever ended a season at cumulative 0.500?
+test6=curr%>%
+  group_by(nameTeam.y,yearSeason)%>%
+  slice_max(numberGameTeamSeason)%>%
+  filter(statrec==0.5)
 
+# Has any team ever ended a season at cumulative 0.500?
+test7=totmid2%>%
+  group_by(nameTeam.y,yearSeason)%>%
+  slice_max(numberGameTeamSeason)%>%
+  filter(statrec==0.5)
+
+pacers=curr%>%filter(idTeam==1610612754)
 
 ggplot(pacers%>%filter(yearSeason>2024),
        aes(x=cumGames,y=statrec))+
@@ -306,4 +318,74 @@ ggplot(fin,aes(y=reorder(nameTeam.y,games_needed),x=games_needed,fill=wl_status)
   xlab("Games Away from 0.500")+
   ylab("Team")+
   theme_bw()
+```
+
+# From beginning, within season mid-ness.
+```{r,fig.width=14,fig.height=5}
+data=read.csv("20260816_nbagamelogs.csv",check.names=FALSE)
+Sys.setenv("VROOM_CONNECTION_SIZE" = 8000000)
+assign_nba_teams()
+
+teamnames=df_dict_nba_teams%>%
+  select(nameTeam,idTeam)
+
+tiebrk=c(24700194,24700193,24900563,
+         24900564,25500289,25500290,
+         25600289,25600290)
+
+# Remove games that never occured and tiebreaker games.
+data2=data%>%
+  filter(is.na(outcomeGame)==FALSE)%>%
+  filter(!idGame%in%tiebrk)
+
+# Calculate from past onwards.
+totmid=data2%>%
+  # For each team, place games in order.
+  arrange(idTeam,yearSeason,numberGameTeamSeason)%>%
+  group_by(idTeam,yearSeason)%>%
+  # At each game, calculate total wins and losses
+  mutate(cumWins=cumsum(isWin),
+         cumLosses=cumsum(isWin==FALSE),
+         cumGames=row_number())%>%
+  rowwise()%>%
+  # Calculate winning percentage, then distance from 0.500.
+  mutate(statrec=cumWins/sum(cumWins,cumLosses),
+         dif500=statrec-0.5,
+         absdif500=abs(statrec-0.5))%>%
+  ungroup()
+
+# Create grouping columns
+totmid$y_above <- ifelse(totmid$statrec >= 0.5, totmid$statrec, 0.5)
+totmid$y_below <- ifelse(totmid$statrec <= 0.5, totmid$statrec, 0.5)
+
+totmid2=merge(totmid,df_dict_nba_teams,by="idTeam")
+
+# Current teams only.
+curr=totmid2%>%filter(yearPlayedLast==2025)
+
+
+csm=curr%>%filter(statrec==0.5)%>%
+  count(nameTeam.y)
+
+p1=ggplot(csm,aes(x=n,y=reorder(nameTeam.y,n)))+
+  geom_bar(stat="identity",color="black",fill="grey70")+
+  geom_text(aes(label=as.character(n),x=n+10))+
+  xlab("# Intra-Season 0.500")+
+  ylab("Team")+
+  theme_bw()
+
+csmy=curr%>%filter(statrec==0.5)%>%
+  count(nameTeam.y,yearSeason)%>%
+  group_by(nameTeam.y)%>%
+  mutate(sum=sum(n))
+
+p2=ggplot(csmy,aes(x=yearSeason,y=reorder(nameTeam.y,sum),fill=n))+
+  geom_tile(color="black")+
+  #geom_text(aes(label = n), color = "white")+
+  scale_fill_gradient(low = "grey80", high = "red",name="# Intra-Season 0.500")+
+  xlab("Season")+
+  ylab("Team")+
+  theme_bw()
+
+p1+p2 + plot_layout(axes="collect")
 ```
