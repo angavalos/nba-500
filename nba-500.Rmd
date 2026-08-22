@@ -11,22 +11,20 @@ output:
 ### Import packages and data.
 
 ##### R
-```{r setup, warning=FALSE}
+```{r setup, warning=FALSE, message=FALSE}
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 library(dplyr)
 library(ggplot2)
 library(data.table)
 library(stringr)
-#library(ggbeeswarm)
-#install.packages("devtools")
-#devtools::install_github("abresler/nbastatR")
 library(nbastatR)
 library(ggstar)
-library(ggimage)
+#library(ggimage)
 library(patchwork)
 ```
 
-```{r}
+## Download NBA game data. eval=FALSE
+```{r, eval=FALSE}
 df_franchise_history=nba_franchise_history()
 
 Sys.setenv("VROOM_CONNECTION_SIZE" = 8000000)
@@ -39,87 +37,57 @@ dataGameLogsTeam=game_logs(seasons = seq(1947,2026,1),
 
 ```
 
+## Analysis
+
 ### From today backwards.
-```{r}
+```{r,fig.height=8,fig.width=12}
+#' Import data.
 data=read.csv("20260816_nbagamelogs.csv",check.names=FALSE)
+
+#' Download team data.
 Sys.setenv("VROOM_CONNECTION_SIZE" = 8000000)
 assign_nba_teams()
 
 teamnames=df_dict_nba_teams%>%
   select(nameTeam,idTeam)
 
+#' Tiebreaker game IDs, to be removed.
 tiebrk=c(24700194,24700193,24900563,
          24900564,25500289,25500290,
          25600289,25600290)
 
-# Remove games that never occured and tiebreaker games.
+#' Remove games that never occured and tiebreaker games.
 data2=data%>%
   filter(is.na(outcomeGame)==FALSE)%>%
   filter(!idGame%in%tiebrk)
 
-# Calculate from today backwards.
+#' Calculate from today backwards.
 totmid=data2%>%
-  #group_by(yearSeason)%>%
-  #filter()
-  # For each team, place games in order.
+  #' For each team, place games in order.
   arrange(idTeam,desc(yearSeason),desc(numberGameTeamSeason))%>%
   group_by(idTeam)%>%
-  # At each game, calculate total wins and losses
+  #' At each game, calculate total wins and losses
   mutate(cumWins=cumsum(isWin),
          cumLosses=cumsum(isWin==FALSE),
          cumGames=row_number())%>%
   rowwise()%>%
-  # Calculate winning percentage, then distance from 0.500.
+  #' Calculate winning percentage, then distance from 0.500.
   mutate(statrec=cumWins/sum(cumWins,cumLosses),
          dif500=statrec-0.5,
          absdif500=abs(statrec-0.5))%>%
   ungroup()
 
-# Create grouping columns
+#' Create grouping columns for plots.
 totmid$y_above <- ifelse(totmid$statrec >= 0.5, totmid$statrec, 0.5)
 totmid$y_below <- ifelse(totmid$statrec <= 0.5, totmid$statrec, 0.5)
 
+#' Merge game data with team data.
 totmid2=merge(totmid,df_dict_nba_teams,by="idTeam")
 
-# Calculate from past onwards.
-#test3=dataGameLogsTeam%>%arrange(idTeam,numberGameTeamSeason)%>%
-#  group_by(idTeam)%>%
-#  mutate(cumWins=cumsum(isWin),
-#                     cumLosses=cumsum(isWin==FALSE))%>%
-#  rowwise()%>%
-#  mutate(statrec=cumWins/sum(cumWins,cumLosses))
-
-# Current teams only.
+#' Filter for current teams only.
 curr=totmid2%>%filter(yearPlayedLast==2025)
 
-team=curr%>%filter(idTeam==1610612737)
-ggplot(team,
-       aes(x=cumGames,y=statrec))+
-  geom_line()+
-  geom_ribbon(aes(ymin = 0.5, ymax = y_above), fill = "blue", alpha = 0.4) +
-  geom_ribbon(aes(ymin = y_below, ymax = 0.5), fill = "red", alpha = 0.4) +
-  geom_star(data=team%>%
-               filter(statrec==0.5),
-            shape = 1,
-            fill="gold",
-            color="black",
-            size=3)+
-  theme_bw()+
-  xlab("# of Games")+
-  ylab("Win-Loss %")
-
-#ggplot(team,
-#       aes(x=cumGames,y=statrec))+
-#  geom_line()+
-#  geom_ribbon(aes(ymin = 0.5, ymax = y_above), fill = "blue", alpha = 0.4) +
-#  geom_ribbon(aes(ymin = y_below, ymax = 0.5), fill = "red", alpha = 0.4) +
-#  geom_image(data=team%>%
-#               filter(statrec==0.5),
-#            aes(image=urlThumbnailTeam),size=0.08)+
-#  theme_bw()+
-#  xlab("# of Games")+
-#  ylab("Win-Loss %")
-
+#' Plot all teams' 0.500.
 ggplot(curr,
        aes(x=cumGames,y=statrec))+
   geom_line()+
@@ -127,7 +95,6 @@ ggplot(curr,
   geom_ribbon(aes(ymin = y_below, ymax = 0.5), fill = "red", alpha = 0.4) +
   geom_star(data=curr%>%
                filter(statrec==0.5),
-            shape = 1,
             fill="gold",
             color="black",
             size=3)+
@@ -140,71 +107,58 @@ ggplot(curr,
   facet_wrap(~nameTeam.y,ncol=5,scales="free_x")+
   theme_bw()+
   xlab("# of Games")+
-  ylab("Win-Loss %")
-
-test5=curr%>%
-  filter(idTeam==1610612737&
-           statrec==0.5)%>%
-  group_by(yearSeason)%>%count()
-
-ggplot(test5,aes(x=yearSeason,y=n))+
-  geom_bar(stat="identity",fill="#e13a3e",color="black")+
-  scale_y_continuous(breaks=c(0,2,4,6,8,10))+
-  scale_x_continuous(breaks=c(1950,1960,1970,1980,1990,2000,2010,2020,2030))+
-  theme_bw()+
-  xlab("Season")+
-  ylab("# of Games where Hawks were 0.500 from Today")
-
-#yo=curr%>%
-#  group_by(idTeam,nameTeam.y) %>%
-#  summarise(mean = mean(statrec),
-#    p_value = t.test(statrec, mu = 0.5)$p.value,
-#    t_stat = t.test(statrec, mu = 0.5)$statistic)
+  ylab("Winning Percentage")
 ```
 
 ### From each team's beginning.
-```{r}
+```{r,fig.height=8,fig.width=12}
+#' Import data.
 data=read.csv("20260816_nbagamelogs.csv",check.names=FALSE)
+
+#' Download team data.
 Sys.setenv("VROOM_CONNECTION_SIZE" = 8000000)
 assign_nba_teams()
 
 teamnames=df_dict_nba_teams%>%
   select(nameTeam,idTeam)
 
+#' Tiebreaker game IDs, to be removed.
 tiebrk=c(24700194,24700193,24900563,
          24900564,25500289,25500290,
          25600289,25600290)
 
-# Remove games that never occured and tiebreaker games.
+#' Remove games that never occured and tiebreaker games.
 data2=data%>%
   filter(is.na(outcomeGame)==FALSE)%>%
   filter(!idGame%in%tiebrk)
 
-# Calculate from past onwards.
+#' Calculate from past onwards.
 totmid=data2%>%
-  # For each team, place games in order.
+  #' For each team, place games in order.
   arrange(idTeam,yearSeason,numberGameTeamSeason)%>%
   group_by(idTeam)%>%
-  # At each game, calculate total wins and losses
+  #' At each game, calculate total wins and losses
   mutate(cumWins=cumsum(isWin),
          cumLosses=cumsum(isWin==FALSE),
          cumGames=row_number())%>%
   rowwise()%>%
-  # Calculate winning percentage, then distance from 0.500.
+  #' Calculate winning percentage, then distance from 0.500.
   mutate(statrec=cumWins/sum(cumWins,cumLosses),
          dif500=statrec-0.5,
          absdif500=abs(statrec-0.5))%>%
   ungroup()
 
-# Create grouping columns
+#' Create grouping columns for plots.
 totmid$y_above <- ifelse(totmid$statrec >= 0.5, totmid$statrec, 0.5)
 totmid$y_below <- ifelse(totmid$statrec <= 0.5, totmid$statrec, 0.5)
 
+#' Merge game data with team data.
 totmid2=merge(totmid,df_dict_nba_teams,by="idTeam")
 
-# Current teams only.
+#' Filter for current teams only.
 curr=totmid2%>%filter(yearPlayedLast==2025)
 
+#' Plot all teams' 0.500.
 ggplot(curr,
        aes(x=cumGames,y=statrec))+
   geom_line()+
@@ -212,7 +166,6 @@ ggplot(curr,
   geom_ribbon(aes(ymin = y_below, ymax = 0.5), fill = "red", alpha = 0.4) +
   geom_star(data=curr%>%
                filter(statrec==0.5),
-            shape = 1,
             fill="gold",
             color="black",
             size=3)+
@@ -225,13 +178,13 @@ ggplot(curr,
   facet_wrap(~nameTeam.y,ncol=5,scales="free_x")+
   theme_bw()+
   xlab("# of Games")+
-  ylab("Win-Loss %")
+  ylab("Winning Percentage")
 
-# To verify that teams never crossed 0.5 line.
+#' To verify that teams never crossed 0.5 line.
 yo=curr%>%group_by(nameTeam.y)%>%
   filter(statrec>=0.5)%>%count()
 
-# Recent seasons only.
+#' Filter for recent seasons only.
 ggplot(curr%>%filter(yearSeason>2024),
        aes(x=cumGames,y=statrec))+
   geom_line()+
@@ -240,7 +193,6 @@ ggplot(curr%>%filter(yearSeason>2024),
   geom_star(data=curr%>%
               filter(yearSeason>2024)%>%
                filter(statrec==0.5),
-            shape = 1,
             fill="gold",
             color="black",
             size=3)+
@@ -253,27 +205,29 @@ ggplot(curr%>%filter(yearSeason>2024),
   facet_wrap(~nameTeam.y,ncol=5,scales="free_x")+
   theme_bw()+
   xlab("# of Games")+
-  ylab("Win-Loss %")
+  ylab("Winning Percentage")
 
-# Count of mid-ness by season for current teams.
+#' Count of cumulative mid-ness by season for current teams.
 test5=totmid2%>%
   filter(statrec==0.5)%>%
   group_by(nameTeam.y,yearSeason)%>%count()
 
-# Has a current team ever ended a season at cumulative 0.500?
+#' Has a current team ever ended a season at cumulative 0.500?
 test6=curr%>%
   group_by(nameTeam.y,yearSeason)%>%
   slice_max(numberGameTeamSeason)%>%
   filter(statrec==0.5)
 
-# Has any team ever ended a season at cumulative 0.500?
+#' Has any team ever ended a season at cumulative 0.500?
 test7=totmid2%>%
   group_by(nameTeam.y,yearSeason)%>%
   slice_max(numberGameTeamSeason)%>%
   filter(statrec==0.5)
 
+#' Pacers
 pacers=curr%>%filter(idTeam==1610612754)
 
+#' Plot Pacers 2024 onward.
 ggplot(pacers%>%filter(yearSeason>2024),
        aes(x=cumGames,y=statrec))+
   geom_line()+
@@ -282,98 +236,106 @@ ggplot(pacers%>%filter(yearSeason>2024),
   geom_star(data=pacers%>%
               filter(yearSeason>2024)%>%
                filter(statrec==0.5),
-            shape = 1,
             fill="gold",
             color="black",
             size=3)+
   theme_bw()+
   xlab("# of Games")+
-  ylab("Win-Loss %")
+  ylab("Winning Percentage")
 
-ggplot(pacers%>%filter(yearSeason==2025),
-       aes(x=cumGames,y=statrec))+
-  geom_line()+
-  geom_ribbon(aes(ymin = 0.5, ymax = y_above), fill = "blue", alpha = 0.4) +
-  geom_ribbon(aes(ymin = y_below, ymax = 0.5), fill = "red", alpha = 0.4) +
-  geom_star(data=pacers%>%
-              filter(yearSeason==2025)%>%
-               filter(statrec==0.5),
-            shape = 1,
-            fill="gold",
-            color="black",
-            size=3)+
-  theme_bw()+
-  xlab("# of Games")+
-  ylab("Win-Loss %")
-
+#' Filter for final cumulative record.
 fin=curr%>%filter(yearSeason==2026&numberGameTeamSeason==82)
 
+#' Calculate games needed to get to 0.500.
 fin=fin%>%mutate(wl_status=if_else(statrec>0.5,"Need to Lose","Need to Win"),
                  games_needed=if_else(wl_status=="Need to Lose",((2*cumWins)-cumGames),(cumGames-(2*cumWins))))
 
-ggplot(fin,aes(y=reorder(nameTeam.y,games_needed),x=games_needed,fill=wl_status))+
+#' Plot Games needed for 0.500.
+pg=ggplot(fin,aes(y=reorder(nameTeam.y,games_needed),x=games_needed,fill=wl_status))+
   geom_bar(stat="identity",color="black")+
-  geom_text(aes(label=as.character(games_needed),x=games_needed+50))+
+  geom_text(aes(label=as.character(games_needed),x=games_needed+30))+
   scale_fill_manual(values=c("red4","blue"),name="Status")+
   xlab("Games Away from 0.500")+
   ylab("Team")+
   theme_bw()
+
+fivhun=curr%>%filter(statrec==0.500)%>%
+  arrange(dateGame)%>%
+  mutate(time_diff = difftime(dateGame, lag(dateGame), units = "days"))%>%
+  arrange(desc(time_diff))%>%
+  select(yearSeason,dateGame,nameTeam.y,time_diff)
+
+df <- df %>%
+  mutate(time_diff = difftime(date_column, lag(date_column), units = "days"))
 ```
 
-# From beginning, within season mid-ness.
+```{r,fig.height=6,fig.width=12}
+pg
+```
+
+### From beginning, within season mid-ness.
 ```{r,fig.width=14,fig.height=5}
+#' Import data.
 data=read.csv("20260816_nbagamelogs.csv",check.names=FALSE)
+
+#' Download team data.
 Sys.setenv("VROOM_CONNECTION_SIZE" = 8000000)
 assign_nba_teams()
 
 teamnames=df_dict_nba_teams%>%
   select(nameTeam,idTeam)
 
+#' Tiebreaker game IDs, to be removed.
 tiebrk=c(24700194,24700193,24900563,
          24900564,25500289,25500290,
          25600289,25600290)
 
-# Remove games that never occured and tiebreaker games.
+#' Remove games that never occured and tiebreaker games.
 data2=data%>%
   filter(is.na(outcomeGame)==FALSE)%>%
   filter(!idGame%in%tiebrk)
 
-# Calculate from past onwards.
+#' Calculate from past onwards.
 totmid=data2%>%
-  # For each team, place games in order.
+  #' For each team, place games in order.
   arrange(idTeam,yearSeason,numberGameTeamSeason)%>%
   group_by(idTeam,yearSeason)%>%
-  # At each game, calculate total wins and losses
+  #' At each game, calculate total wins and losses
   mutate(cumWins=cumsum(isWin),
          cumLosses=cumsum(isWin==FALSE),
          cumGames=row_number())%>%
   rowwise()%>%
-  # Calculate winning percentage, then distance from 0.500.
+  #' Calculate winning percentage, then distance from 0.500.
   mutate(statrec=cumWins/sum(cumWins,cumLosses),
          dif500=statrec-0.5,
          absdif500=abs(statrec-0.5))%>%
   ungroup()
 
-# Create grouping columns
-totmid$y_above <- ifelse(totmid$statrec >= 0.5, totmid$statrec, 0.5)
-totmid$y_below <- ifelse(totmid$statrec <= 0.5, totmid$statrec, 0.5)
+#' Create grouping columns for plots.
+#totmid$y_above <- ifelse(totmid$statrec >= 0.5, totmid$statrec, 0.5)
+#totmid$y_below <- ifelse(totmid$statrec <= 0.5, totmid$statrec, 0.5)
 
+#' Merge game data with team data.
 totmid2=merge(totmid,df_dict_nba_teams,by="idTeam")
 
-# Current teams only.
+#' Filter for current teams only.
 curr=totmid2%>%filter(yearPlayedLast==2025)
 
-
+#' Count of all 0.500 occurrences for each team.
 csm=curr%>%filter(statrec==0.5)%>%
   count(nameTeam.y)
 
+#' Count of all games for each team.
 tm=curr%>%
   count(nameTeam.y)
 
+#' Merge count data.
 csm2=merge(csm,tm,by="nameTeam.y")
 
+#' Calculate normalized 0.500 occurrences value.
 csm2=csm2%>%mutate(norm=n.x/n.y)
 
+#' Bar chart of 0.500 occurrences.
 p1=ggplot(csm2,aes(x=n.x,y=reorder(nameTeam.y,n.x)))+
   geom_bar(stat="identity",color="black",aes(fill=norm*100))+
   geom_text(aes(label=as.character(n.x),x=n.x+15))+
@@ -382,6 +344,7 @@ p1=ggplot(csm2,aes(x=n.x,y=reorder(nameTeam.y,n.x)))+
   ylab("Team")+
   theme_bw()
 
+#' For each team, number of 0.500 occurrences by season.
 csmy=curr%>%filter(statrec==0.5)%>%
   count(nameTeam.y,yearSeason)%>%
   group_by(nameTeam.y)%>%
@@ -389,7 +352,6 @@ csmy=curr%>%filter(statrec==0.5)%>%
 
 p2=ggplot(csmy,aes(x=yearSeason,y=reorder(nameTeam.y,sum),fill=n))+
   geom_tile(color="black")+
-  #geom_text(aes(label = n), color = "white")+
   scale_fill_gradient(low = "grey80", high = "red4",name="# Intra-season 0.500")+
   xlab("Season")+
   ylab("Team")+
@@ -397,5 +359,6 @@ p2=ggplot(csmy,aes(x=yearSeason,y=reorder(nameTeam.y,sum),fill=n))+
 
 p1+p2 + plot_layout(axes="collect", guides="collect",widths=c(3,4))
 
+#' League-wide 0.500 occurrences for each season.
 test=csmy%>%group_by(yearSeason)%>%summarize(total=sum(n))
 ```
