@@ -367,10 +367,18 @@ curr=totmid2%>%filter(yearPlayedLast==2025)
 csm=curr%>%filter(statrec==0.5)%>%
   count(nameTeam.y)
 
-p1=ggplot(csm,aes(x=n,y=reorder(nameTeam.y,n)))+
-  geom_bar(stat="identity",color="black",fill="grey70")+
-  geom_text(aes(label=as.character(n),x=n+10))+
-  xlab("# Intra-Season 0.500")+
+tm=curr%>%
+  count(nameTeam.y)
+
+csm2=merge(csm,tm,by="nameTeam.y")
+
+csm2=csm2%>%mutate(norm=n.x/n.y)
+
+p1=ggplot(csm2,aes(x=n.x,y=reorder(nameTeam.y,n.x)))+
+  geom_bar(stat="identity",color="black",aes(fill=norm*100))+
+  geom_text(aes(label=as.character(n.x),x=n.x+15))+
+  scale_fill_gradient(low = "grey80", high = "blue4",name="% Games 0.500")+
+  xlab("# Intra-season 0.500")+
   ylab("Team")+
   theme_bw()
 
@@ -382,10 +390,12 @@ csmy=curr%>%filter(statrec==0.5)%>%
 p2=ggplot(csmy,aes(x=yearSeason,y=reorder(nameTeam.y,sum),fill=n))+
   geom_tile(color="black")+
   #geom_text(aes(label = n), color = "white")+
-  scale_fill_gradient(low = "grey80", high = "red",name="# Intra-Season 0.500")+
+  scale_fill_gradient(low = "grey80", high = "red4",name="# Intra-season 0.500")+
   xlab("Season")+
   ylab("Team")+
   theme_bw()
 
-p1+p2 + plot_layout(axes="collect")
+p1+p2 + plot_layout(axes="collect", guides="collect",widths=c(3,4))
+
+test=csmy%>%group_by(yearSeason)%>%summarize(total=sum(n))
 ```
